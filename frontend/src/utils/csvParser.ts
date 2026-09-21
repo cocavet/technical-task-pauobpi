@@ -1,4 +1,13 @@
 import Papa from 'papaparse'
+import {
+  isValidEmail,
+  isValidCountryCode,
+  isValidPhoneNumber,
+  isValidYearsAtCompanyText,
+  isValidLinkedinUrl,
+} from '../../../shared/utils/validators'
+
+export { isValidEmail } from '../../../shared/utils/validators'
 
 export interface CsvLead {
   firstName: string
@@ -7,14 +16,12 @@ export interface CsvLead {
   jobTitle?: string
   countryCode?: string
   companyName?: string
+  phoneNumber?: string
+  yearsAtCompany?: number
+  linkedinUrl?: string
   isValid: boolean
   errors: string[]
   rowIndex: number
-}
-
-export const isValidEmail = (email: string): boolean => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  return emailRegex.test(email)
 }
 
 export const parseCsv = (content: string): CsvLead[] => {
@@ -48,6 +55,7 @@ export const parseCsv = (content: string): CsvLead[] => {
   parseResult.data.forEach((row, index) => {
     if (Object.values(row).every((value) => !value)) return
 
+    const errors: string[] = []
     const lead: Partial<CsvLead> = { rowIndex: index + 2 }
 
     Object.entries(row).forEach(([header, value]) => {
@@ -70,13 +78,27 @@ export const parseCsv = (content: string): CsvLead[] => {
         case 'countrycode':
           lead.countryCode = trimmedValue || undefined
           break
+        case 'phonenumber':
+          lead.phoneNumber = trimmedValue || undefined
+          break
+        case 'yearsatcompany':
+          if (trimmedValue) {
+            if (!isValidYearsAtCompanyText(trimmedValue)) {
+              errors.push('Years at company must be a non-negative integer (0 is valid)')
+            } else {
+              lead.yearsAtCompany = Number(trimmedValue)
+            }
+          }
+          break
+        case 'linkedinurl':
+          lead.linkedinUrl = trimmedValue || undefined
+          break
         case 'companyname':
           lead.companyName = trimmedValue || undefined
           break
       }
     })
 
-    const errors: string[] = []
     if (!lead.firstName?.trim()) {
       errors.push('First name is required')
     }
@@ -88,8 +110,15 @@ export const parseCsv = (content: string): CsvLead[] => {
     } else if (!isValidEmail(lead.email)) {
       errors.push('Invalid email format')
     }
-    if (lead.countryCode && !/^[A-Z]{2}$/.test(lead.countryCode)) {
+    if (lead.countryCode && !isValidCountryCode(lead.countryCode)) {
       errors.push('Country code must be two uppercase letters')
+    }
+
+    if (lead.phoneNumber && !isValidPhoneNumber(lead.phoneNumber)) {
+      errors.push('Invalid phone number format')
+    }
+    if (lead.linkedinUrl && !isValidLinkedinUrl(lead.linkedinUrl)) {
+      errors.push('LinkedIn URL must be an HTTP(S) LinkedIn profile URL')
     }
 
     data.push({

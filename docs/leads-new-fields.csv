@@ -1,0 +1,4 @@
+firstName,lastName,email,companyName,phoneNumber,yearsAtCompany,linkedinUrl
+Ana,Ejemplo,ana.fields@example.com,Empresa Uno,+34 612 345 678,5,https://www.linkedin.com/in/ana-ejemplo
+Luis,Ejemplo,luis.fields@example.com,Empresa Dos,,,
+Zoé,Ejemplo,zoe.fields@example.com,Empresa Tres,0034 600 123 456,0,https://www.linkedin.com/in/zoe-ejemplo

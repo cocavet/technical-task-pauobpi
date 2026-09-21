@@ -4,6 +4,7 @@ import { Connection, Client } from '@temporalio/client'
 import { verifyEmailWorkflow } from './workflows'
 import { generateMessageFromTemplate } from './utils/messageGenerator'
 import { runTemporalWorker } from './worker'
+import { validateLeadFields, OptionalLeadFields } from './utils/leadFields'
 const prisma = new PrismaClient()
 const app = express()
 app.use(express.json())
@@ -11,7 +12,7 @@ app.use(express.json())
 app.use(function (req, res, next) {
   res.header('Access-Control-Allow-Origin', '*')
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept')
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
 
   if (req.method === 'OPTIONS') {
     res.sendStatus(200)
@@ -22,7 +23,13 @@ app.use(function (req, res, next) {
 })
 
 app.post('/leads', async (req: Request, res: Response) => {
-  const { name, lastName, email } = req.body
+  const { firstName, name = firstName, lastName, email } = req.body || {}
+  let fields: OptionalLeadFields
+  try {
+    fields = validateLeadFields(req.body || {})
+  } catch (error) {
+    return res.status(400).json({ error: (error as Error).message })
+  }
 
   if (!name || !lastName || !email) {
     return res.status(400).json({ error: 'firstName, lastName, and email are required' })
@@ -30,6 +37,7 @@ app.post('/leads', async (req: Request, res: Response) => {
 
   const lead = await prisma.lead.create({
     data: {
+      ...fields,
       firstName: String(name),
       lastName: String(lastName),
       email: String(email),
@@ -56,14 +64,21 @@ app.get('/leads', async (req: Request, res: Response) => {
 
 app.patch('/leads/:id', async (req: Request, res: Response) => {
   const { id } = req.params
-  const { name, email } = req.body
+  const { firstName, name = firstName, email } = req.body || {}
+  let fields: OptionalLeadFields
+  try {
+    fields = validateLeadFields(req.body || {})
+  } catch (error) {
+    return res.status(400).json({ error: (error as Error).message })
+  }
   const lead = await prisma.lead.update({
     where: {
       id: Number(id),
     },
     data: {
-      firstName: String(name),
-      email: String(email),
+      ...fields,
+      firstName: name === undefined ? undefined : String(name),
+      email: email === undefined ? undefined : String(email),
     },
   })
   res.json(lead)
@@ -181,6 +196,7 @@ app.post('/leads/bulk', async (req: Request, res: Response) => {
   try {
     const validLeads = leads.filter((lead) => {
       return (
+        lead &&
         lead.firstName &&
         lead.lastName &&
         lead.email &&
@@ -223,6 +239,7 @@ app.post('/leads/bulk', async (req: Request, res: Response) => {
       try {
         await prisma.lead.create({
           data: {
+            ...validateLeadFields(lead),
             firstName: lead.firstName.trim(),
             lastName: lead.lastName.trim(),
             email: lead.email.trim(),

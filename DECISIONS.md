@@ -114,3 +114,119 @@ ocurre en el endpoint cuando obtiene un resultado correcto.
   en `useApiMutation.ts:64`. No se amplía este bloque para corregirlo.
 
 Bloque de verificación de emails cerrado.
+
+## Bloque 3: nuevos campos de lead — 21/09/2026
+
+### Alcance y decisiones
+
+Se añaden `phoneNumber`, `yearsAtCompany` y `linkedinUrl` de extremo a extremo:
+Prisma y migración, API de alta/consulta/actualización/importación, tipos del
+frontend, CSV y su vista previa, tabla y composición/generación de mensajes.
+Se interpreta «AI» como API: este proyecto genera mensajes con plantillas y no
+contiene una integración de IA. No se añade una nueva integración.
+
+- Los tres campos son opcionales. La migración añade tres columnas nullable sin
+  reconstruir la tabla ni modificar valores anteriores; los leads existentes
+  reciben `null` en las nuevas columnas.
+- `phoneNumber` es texto, nunca un número de JavaScript: conserva `+`, ceros
+  iniciales, separadores y extensiones presentes en los CSV originales. Se
+  recortan espacios exteriores. La validación de formato permite entre 3 y 20
+  dígitos en el número principal, separadores habituales y extensión `x`/`ext`
+  de hasta 6 dígitos, con un máximo de 64 caracteres. No verifica existencia.
+- `yearsAtCompany` representa años completos en la empresa actual: entero entre
+  0 y 2147483647 (límite de Prisma Int). `0` es válido y se conserva al importar,
+  mostrar y generar mensajes. La API recibe un número; el parser convierte
+  únicamente celdas CSV no vacías formadas por dígitos.
+- `yearsInRole` significa años en el puesto actual, no en la empresa. Una persona
+  puede llevar 8 años en la empresa y 2 en su puesto. No se renombra, convierte
+  ni usa esa columna como alternativa a `yearsAtCompany`; sigue ignorada en los
+  CSV antiguos. No se inventa antigüedad para los leads existentes.
+- `linkedinUrl` admite una URL HTTP(S) de perfil `/in/...` en `linkedin.com` o sus
+  subdominios, sin credenciales. Se rechazan otros protocolos, otros dominios,
+  dominios que solo imitan LinkedIn y páginas de empresa.
+- El backend valida los campos en alta, actualización e importación. En alta y
+  actualización devuelve 400 antes de escribir; en importación informa los
+  errores por fila y continúa con las demás, como el flujo existente. El modal
+  ahora muestra esos fallos del backend. El CSV también detecta formatos inválidos.
+- En actualización, omitir un campo conserva su valor; `null` o texto vacío lo
+  borra. Se alinean dos desajustes necesarios para el recorrido: `firstName`
+  del frontend se acepta conservando el alias `name`, y el cliente utiliza el
+  `PATCH` existente, permitido también en CORS. Actualizar solo los nuevos campos
+  ya no escribe `"undefined"` sobre nombre/email. El tipo de respuesta refleja
+  el lead devuelto por la API. Al completar los valores iniciales del lead
+  optimista se añade también `emailVerified: null`, resolviendo el error de
+  compilación anterior en ese mismo objeto.
+- Las nuevas variables son `{phoneNumber}`, `{yearsAtCompany}` y `{linkedinUrl}`.
+  Se conserva la regla existente: si una plantilla pide un campo ausente, falla
+  solo ese lead y no sustituye su mensaje anterior. Si no lo pide, genera
+  normalmente. Los números se convierten a texto sin confundir `0` con ausencia.
+
+### Composición y ejemplo
+
+La fila de botones se sustituye por un selector desplegable con buscador sin
+nuevas dependencias, manteniendo colores y estilos. Permite ratón, flechas,
+Enter y Escape, informa cuando no hay resultados y devuelve el foco al editor.
+Guarda la posición/selección antes de pasar al buscador, inserta en el cursor o
+sustituye el texto seleccionado y deja el cursor después de la variable.
+
+`docs/leads-new-fields.csv` contiene tres ejemplos: datos completos, campos
+vacíos y cero años con teléfono que empieza por `00`.
+
+### Verificación
+
+- Backend: 71 pruebas correctas y compilación correcta. Se cubren los tres
+  campos, valores inválidos, ausencia, borrado explícito, actualización parcial,
+  importación y generación con errores parciales y cero años.
+- Frontend: 38 pruebas correctas y compilación de producción correcta. Incluyen
+  CSV antiguos, nuevos campos, separación de `yearsInRole`, búsqueda, inserción
+  en el cursor, sustitución de selección e inserciones consecutivas con teclado.
+- Recorrido real en navegador con el CSV de ejemplo: 3 filas válidas importadas;
+  vista previa, tabla, API y SQLite conservaron los valores, incluidos `0034`,
+  `0` y el nombre `Zoé`. Se comprobó buscar `PHONE` e insertar la variable en
+  medio de un texto, conservando el cursor y devolviendo el foco al editor.
+- Generación real con las tres variables: 2 mensajes generados (5 y 0 años),
+  y error explícito por teléfono ausente para Luis. Al cambiar la plantilla a
+  `Hi {firstName}`, se generaron correctamente los 3 mensajes.
+- API real: actualización parcial, rechazo de teléfono numérico, antigüedad
+  negativa y dominio LinkedIn falso; borrado explícito y consulta posterior.
+- Se retiraron exclusivamente los tres leads de prueba (IDs 36–38). La comparación
+  con la instantánea anterior a la migración confirma que los 29 leads originales
+  conservan todos sus valores previos y tienen los nuevos campos a `null`.
+
+Bloque 3 cerrado. Sin nuevas dependencias ni refactorizaciones ajenas al recorrido.
+
+### Ajuste solicitado: validadores compartidos y `finally` — 21/09/2026
+
+Se crea `shared/utils/validators.ts` en la raíz, con el nombre de carpeta
+corregido por el usuario. Centraliza las comprobaciones de formato de email, teléfono,
+LinkedIn, país y antigüedad. Frontend y backend importan directamente este
+archivo; se eliminan las expresiones y comprobaciones duplicadas. La
+normalización, obligatoriedad y presentación de errores siguen en cada flujo.
+Se mantienen las reglas existentes: el CSV convierte texto de años válido y la
+API exige un número; cero sigue siendo válido. El email y el país conservan su
+alcance de validación anterior, sin imponer nuevas restricciones a la API.
+
+En la lectura del CSV se mueve `setIsProcessing(false)` a `finally`, para
+restablecer el estado tanto en éxito como en error, sin repetirlo en `try` y
+`catch`. La conexión con Temporal ya tenía su cierre en `finally`; las funciones
+puras de validación no necesitan una operación de limpieza.
+
+Para compilar el TypeScript común sin dependencias nuevas, ambos proyectos
+incluyen `shared`. El backend amplía `rootDir` y su arranque utiliza
+`dist/backend/src/index.js`; el modo desarrollo observa también `../shared`.
+Vite permite servir los archivos compartidos desde la raíz del proyecto.
+
+Verificación: las 71 pruebas del backend y 38 del frontend siguen pasando;
+ambos proyectos compilan. Se ejecutó también el validador del backend compilado,
+confirmando que resuelve el módulo común y conserva teléfono con ceros iniciales,
+antigüedad cero y URL de LinkedIn. No se modifican los leads en este ajuste.
+
+### Renombrado de la carpeta común a `shared` — 21/09/2026
+
+Tras el renombrado del usuario, se corrigen los imports, las inclusiones de
+TypeScript y la carpeta observada por el modo desarrollo del backend. La
+ubicación definitiva es `shared/utils/validators.ts` y las referencias de este
+documento se actualizan para reflejarla.
+
+Verificación: 71 pruebas del backend y 38 del frontend correctas, compilaciones
+correctas y carga del módulo compartido desde el backend compilado comprobada.

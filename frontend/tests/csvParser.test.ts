@@ -278,3 +278,40 @@ Jane,Johnson,jane@example.com`
     expect(result[0].isValid).toBe(true)
   })
 })
+
+describe('new optional fields', () => {
+  it('parses present, absent and zero values without converting phones to numbers', () => {
+    const rows = parseCsv(`firstName,lastName,email,phoneNumber,yearsAtCompany,linkedinUrl
+Ana,Test,ana@example.com,+34 612 345 678,5,https://linkedin.com/in/ana
+Luis,Test,luis@example.com,,,
+Zoe,Test,zoe@example.com,0034 612 345 678,0,https://linkedin.com/in/zoe`)
+    expect(rows.every((row) => row.isValid)).toBe(true)
+    expect(rows[0]).toMatchObject({
+      phoneNumber: '+34 612 345 678',
+      yearsAtCompany: 5,
+      linkedinUrl: 'https://linkedin.com/in/ana',
+    })
+    expect(rows[1].yearsAtCompany).toBeUndefined()
+    expect(rows[1].phoneNumber).toBeUndefined()
+    expect(rows[2]).toMatchObject({ phoneNumber: '0034 612 345 678', yearsAtCompany: 0 })
+  })
+  it('does not map yearsInRole to yearsAtCompany', () => {
+    const [row] = parseCsv('firstName,lastName,email,yearsInRole\nAna,Test,ana@example.com,8')
+    expect(row.isValid).toBe(true)
+    expect(row.yearsAtCompany).toBeUndefined()
+  })
+  it.each(['-1', '1.5', 'NaN', '1e2', '0x10', '2147483648'])('rejects invalid CSV years: %s', (years) => {
+    expect(
+      parseCsv(`firstName,lastName,email,yearsAtCompany\nAna,Test,ana@example.com,${years}`)[0].isValid
+    ).toBe(false)
+  })
+  it('flags invalid phone and LinkedIn values before importing', () => {
+    const [row] = parseCsv(
+      'firstName,lastName,email,phoneNumber,linkedinUrl\nAna,Test,ana@example.com,call me,https://linkedin.com.evil.test/in/ana'
+    )
+    expect(row.errors).toEqual([
+      'Invalid phone number format',
+      'LinkedIn URL must be an HTTP(S) LinkedIn profile URL',
+    ])
+  })
+})

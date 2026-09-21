@@ -6,6 +6,9 @@ export type LeadsGetManyOutput = {
   updatedAt: string
   firstName: string
   lastName: string | null
+  phoneNumber?: string | null
+  yearsAtCompany?: number | null
+  linkedinUrl?: string | null
   email: string | null
   jobTitle: string | null
   countryCode: string | null

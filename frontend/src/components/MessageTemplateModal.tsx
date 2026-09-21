@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { api } from '../api'
+import { VariableSelector } from './VariableSelector'
 
 interface MessageTemplateModalProps {
   isOpen: boolean
@@ -24,6 +25,7 @@ export const MessageTemplateModal: FC<MessageTemplateModalProps> = ({
     errors: Array<{ leadId: number; leadName: string; error: string }>
   } | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const selectionRef = useRef({ start: 0, end: 0 })
   const queryClient = useQueryClient()
 
   const generateMessagesMutation = useMutation({
@@ -106,19 +108,30 @@ export const MessageTemplateModal: FC<MessageTemplateModalProps> = ({
     }
   }, [isOpen, handleClose])
 
-  const availableFields = ['firstName', 'lastName', 'email', 'jobTitle', 'companyName', 'countryCode']
+  const availableFields = [
+    'firstName',
+    'lastName',
+    'email',
+    'jobTitle',
+    'companyName',
+    'countryCode',
+    'phoneNumber',
+    'yearsAtCompany',
+    'linkedinUrl',
+  ]
 
   const insertField = (field: string) => {
     if (textareaRef.current) {
       const textarea = textareaRef.current
-      const start = textarea.selectionStart
-      const end = textarea.selectionEnd
+      const { start, end } = selectionRef.current
       const newTemplate = template.substring(0, start) + `{${field}}` + template.substring(end)
       setTemplate(newTemplate)
 
       setTimeout(() => {
         textarea.focus()
-        textarea.setSelectionRange(start + field.length + 2, start + field.length + 2)
+        const position = start + field.length + 2
+        textarea.setSelectionRange(position, position)
+        selectionRef.current = { start: position, end: position }
       }, 0)
     }
   }
@@ -156,24 +169,27 @@ export const MessageTemplateModal: FC<MessageTemplateModalProps> = ({
                 Message Template
               </label>
               <div className="space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  <span className="text-sm text-gray-600">Insert field:</span>
-                  {availableFields.map((field) => (
-                    <button
-                      key={field}
-                      type="button"
-                      onClick={() => insertField(field)}
-                      className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors"
-                    >
-                      {`{${field}}`}
-                    </button>
-                  ))}
-                </div>
+                <VariableSelector fields={availableFields} onSelect={insertField} />
                 <textarea
                   ref={textareaRef}
                   id="message-template"
                   value={template}
-                  onChange={(e) => setTemplate(e.target.value)}
+                  onChange={(e) => {
+                    setTemplate(e.target.value)
+                    selectionRef.current = { start: e.target.selectionStart, end: e.target.selectionEnd }
+                  }}
+                  onSelect={(e) => {
+                    selectionRef.current = {
+                      start: e.currentTarget.selectionStart,
+                      end: e.currentTarget.selectionEnd,
+                    }
+                  }}
+                  onBlur={(e) => {
+                    selectionRef.current = {
+                      start: e.currentTarget.selectionStart,
+                      end: e.currentTarget.selectionEnd,
+                    }
+                  }}
                   placeholder="Enter your message template here. Use {fieldName} to insert dynamic values.&#10;&#10;Example: Hi {firstName}, I noticed you work at {companyName} as a {jobTitle}. Would you be interested in..."
                   className="w-full h-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
                   required
