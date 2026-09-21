@@ -1,11 +1,11 @@
-import { PrismaClient } from '@prisma/client'
+import { prisma } from './db'
+import { registerPhoneRoutes } from './phone/routes'
 import express, { Request, Response } from 'express'
 import { Connection, Client } from '@temporalio/client'
 import { verifyEmailWorkflow } from './workflows'
 import { generateMessageFromTemplate } from './utils/messageGenerator'
 import { runTemporalWorker } from './worker'
 import { validateLeadFields, OptionalLeadFields } from './utils/leadFields'
-const prisma = new PrismaClient()
 const app = express()
 app.use(express.json())
 
@@ -45,6 +45,8 @@ app.post('/leads', async (req: Request, res: Response) => {
   })
   res.json(lead)
 })
+
+registerPhoneRoutes(app)
 
 app.get('/leads/:id', async (req: Request, res: Response) => {
   const { id } = req.params
@@ -303,7 +305,7 @@ app.post('/leads/verify-emails', async (req: Request, res: Response) => {
         try {
           const isVerified = await connection!.withDeadline(Date.now() + 20_000, () =>
             client.workflow.execute(verifyEmailWorkflow, {
-              taskQueue: 'myQueue',
+              taskQueue: process.env.TASK_QUEUE || 'myQueue',
               workflowId: `verify-email-${lead.id}`,
               workflowIdConflictPolicy: 'USE_EXISTING',
               workflowExecutionTimeout: '15 seconds',
@@ -337,8 +339,9 @@ app.post('/leads/verify-emails', async (req: Request, res: Response) => {
   }
 })
 
-app.listen(4000, () => {
-  console.log('Express server is running on port 4000')
+const port = Number(process.env.PORT || 4000)
+app.listen(port, () => {
+  console.log(`Express server is running on port ${port}`)
 })
 
 runTemporalWorker().catch((err) => {

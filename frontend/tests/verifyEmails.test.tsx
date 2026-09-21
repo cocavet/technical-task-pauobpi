@@ -6,12 +6,13 @@ import { LeadsList } from '../src/components/LeadsList'
 
 const mocks = vi.hoisted(() => ({
   getMany: vi.fn(),
+  phoneProgress: vi.fn().mockResolvedValue([]),
   verifyEmails: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
 }))
 vi.mock('../src/api', () => ({
-  api: { leads: { getMany: mocks.getMany, verifyEmails: mocks.verifyEmails } },
+  api: { leads: { getMany: mocks.getMany, phoneProgress: mocks.phoneProgress, verifyEmails: mocks.verifyEmails } },
 }))
 vi.mock('react-hot-toast', () => ({ default: { success: mocks.success, error: mocks.error } }))
 vi.mock('../src/components/CsvImportModal', () => ({ CsvImportModal: () => null }))

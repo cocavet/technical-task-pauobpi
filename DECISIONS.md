@@ -230,3 +230,101 @@ documento se actualizan para reflejarla.
 
 Verificación: 71 pruebas del backend y 38 del frontend correctas, compilaciones
 correctas y carga del módulo compartido desde el backend compilado comprobada.
+
+## Bloque 4: búsqueda de teléfono con Temporal — 21/09/2026
+
+### Ejecución y proveedores
+
+Se reutilizan el worker y la cola existentes. `enrichPhoneWorkflow` consulta
+**Orion → Astra → Nimbus**, con una actividad por proveedor y parada al encontrar
+un teléfono válido. `backend/src/phone/providers.ts` encapsula entradas,
+autenticación y normalización de cada respuesta. Se conserva literalmente
+`https://api.enginy.ai/api/tmp/numbusLookup` del README. Las claves de ejemplo
+son las del README y pueden sobrescribirse con `ORION_API_KEY`, `ASTRA_API_KEY`
+y `NIMBUS_API_KEY`, exclusivamente en backend.
+
+- HTTP: 4 segundos con aborto y limpieza del temporizador en `finally`.
+- Proveedor: 5 segundos por intento, como máximo 3 intentos, backoff de 1 y 2
+  segundos y 20 segundos totales incluyendo cola. Se reintentan red, timeout,
+  429 y 5xx. Otros errores HTTP, JSON inválido o teléfono inválido no se reintentan.
+- Workflow: 90 segundos y un único intento; no reinicia toda la cadena.
+- Lectura/persistencia: actividades independientes, hasta 3 intentos y 10 segundos
+  totales. Si falla guardar el teléfono no se consulta a otro proveedor para
+  ocultar ese fallo: falla la ejecución y la consulta de estado lo informa.
+
+Agotados los intentos de un proveedor se registra su fallo y se continúa.
+`found` significa teléfono encontrado; `not_found`, consultas completas sin
+resultado; `error`, sin teléfono y con algún fallo técnico; `missing_input`,
+sin teléfono ni fallos técnicos pero con proveedores omitidos por datos faltantes.
+`preserved` indica que se conservó un teléfono añadido durante la búsqueda.
+
+Orion acepta ausencia explícita con `phone: null`; Astra, `phoneNmbr` nulo o
+ausente. Se interpreta HTTP 204 como ausencia explícita de contenido. El README
+no define una respuesta JSON vacía de Nimbus: JSON inesperado, incluido
+`number: null`, es error, no ausencia. Su número debe ser entero positivo seguro;
+se guarda como texto sin inventar prefijos a partir de `countryCode`. Esta
+adaptación no puede recuperar ceros que el proveedor ya haya perdido al enviarlo
+como número. No se añaden reglas de rate limiting fuera del alcance acordado.
+
+### Datos y protección de escrituras
+
+La migración añade `companyWebsite` opcional y metadatos de estado, proveedor,
+diagnóstico, inicio/finalización e identificadores de solicitud y ejecución.
+`companyWebsite` recorre API, CSV, tipos, vista previa y tabla. El validador común
+acepta dominio o URL HTTP(S) y extrae su dominio; nunca lo deduce de empresa o
+email. Sin web explícita se omite Orion; sin email/jobTitle requerido se omiten
+los proveedores correspondientes y se continúa con los disponibles.
+
+Los leads con teléfono se omiten. La admisión usa una actualización condicional
+atómica en SQLite antes de iniciar Temporal. Las actividades comprueban la
+solicitud vigente y la escritura final es transaccional y condicionada a que el
+campo siga vacío. Un reintento, una respuesta tardía o una búsqueda anterior no
+sobrescriben ni borran un teléfono. No se incorpora una acción de reemplazo.
+
+### API, duplicados y feedback
+
+`POST /leads/enrich-phones` devuelve **202** tras iniciar las ejecuciones, sin
+esperar su resultado. Deduplica los IDs de la petición. Usa ID estable
+`enrich-phone-{leadId}`, conflicto `USE_EXISTING` y reutilización
+`ALLOW_DUPLICATE`: una búsqueda activa se reutiliza y una terminada permite una
+nueva búsqueda manual si sigue sin teléfono. Una solicitud con inicio ambiguo
+queda marcada como error y se invalida para evitar escrituras tardías; si aún
+hay una ejecución anterior terminando, se informa y se puede volver a intentar.
+
+`GET /leads/phone-enrichment` devuelve los estados persistidos y contrasta los
+activos con Temporal. Repara estados pendientes cuando la ejecución ha fallado,
+expirado o no llegó a iniciarse, sin modificar resultados ya guardados ni
+solicitudes posteriores. Una caída de conexión se informa como estado temporalmente
+no disponible; no se convierte en «sin datos». Las conexiones se cierran en `finally`.
+
+La tabla muestra proveedor en curso, resultado y diagnóstico. React Query
+consulta cada 2 segundos mientras hay búsquedas activas y recupera el estado al
+recargar. Si falla la consulta muestra un aviso y permite reintentar. Se bloquea
+buscar de nuevo o borrar la selección mientras tiene búsquedas activas, y buscar
+cuando todos los seleccionados ya tienen teléfono. Se mantienen estilos y no
+se añaden dependencias.
+
+### Verificación
+
+- 109 pruebas de backend y 44 de frontend correctas; ambas compilaciones pasan.
+- Integración con Temporal real, SQLite aislado y proveedores HTTP simulados:
+  éxito en cada proveedor, orden, parada temprana, ausencia, entradas faltantes,
+  errores transitorios/permanentes, respuesta malformada, timeout HTTP, tres
+  intentos con esperas de 1/2 segundos y tres solicitudes duplicadas concurrentes.
+- Se comprobó respuesta 202 antes de terminar, nueva ejecución al repetir una
+  búsqueda vacía, conservación de teléfonos existentes y añadidos durante la
+  búsqueda, y recuperación del timeout de un workflow sin worker.
+- SQLite real: una respuesta de una solicitud antigua no escribe sobre la nueva;
+  repetir la persistencia no sustituye un resultado ya guardado.
+- Navegador contra el entorno aislado: importación de `companyWebsite`, inicio
+  desde «Find phone», recarga durante Orion, progreso recuperado, controles
+  bloqueados, éxito posterior con Astra, ausencia y falta de entradas diferenciadas,
+  repetición manual de una búsqueda vacía y protección del teléfono encontrado.
+- Simulación en `backend/tests/fixtures/phoneFetch.cjs`, cargada solo por el proceso
+  de prueba; recorrido reproducible en `backend/tests/phoneEnrichment.integration.cjs`.
+  Para aislarlo se permiten `DATABASE_URL`, `PORT` y `TASK_QUEUE`; los valores
+  normales del proyecto se mantienen cuando no se proporcionan.
+- No se consultaron proveedores externos durante las pruebas. Los 29 leads
+  originales se comparan con la instantánea previa y conservan sus datos.
+
+Bloque 4 cerrado dentro del diseño acordado.

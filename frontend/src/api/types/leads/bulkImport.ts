@@ -2,6 +2,7 @@ export interface LeadsBulkImportInput {
   leads: {
     firstName: string
     lastName: string
+    companyWebsite?: string | null
     phoneNumber?: string | null
     yearsAtCompany?: number | null
     linkedinUrl?: string | null

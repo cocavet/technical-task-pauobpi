@@ -3,6 +3,7 @@ import { LeadsGetOneOutput } from './getOne'
 export type LeadsUpdateInput = {
   id: number
   firstName?: string
+  companyWebsite?: string | null
   phoneNumber?: string | null
   yearsAtCompany?: number | null
   linkedinUrl?: string | null

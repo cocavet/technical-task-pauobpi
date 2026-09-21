@@ -9,7 +9,7 @@ export async function runTemporalWorker() {
     const worker = await Worker.create({
       connection,
       namespace: 'default',
-      taskQueue: 'myQueue',
+      taskQueue: process.env.TASK_QUEUE || 'myQueue',
       workflowsPath: require.resolve('./workflows'),
       activities,
     })

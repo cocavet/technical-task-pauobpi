@@ -1,3 +1,4 @@
+import { EnrichPhonesOutput, PhoneProgress } from '../types/leads/enrichPhones'
 import { LeadsCreateInput, LeadsCreateOutput } from '../types/leads/create'
 import { LeadsDeleteInput, LeadsDeleteOutput } from '../types/leads/delete'
 import { LeadsDeleteManyInput, LeadsDeleteManyOutput } from '../types/leads/deleteMany'
@@ -11,6 +12,14 @@ import { ApiModule, endpoint } from '../utils'
 import { axiosInstance } from '../../utils/axios'
 
 export const leadsApi = {
+  enrichPhones: async (input: { leadIds: number[] }): Promise<EnrichPhonesOutput> => {
+    const response = await axiosInstance.post('/leads/enrich-phones', input, { timeout: 15_000 })
+    return response.data
+  },
+  phoneProgress: async (): Promise<PhoneProgress[]> => {
+    const response = await axiosInstance.get('/leads/phone-enrichment', { timeout: 12_000 })
+    return response.data
+  },
   getMany: endpoint<LeadsGetManyOutput, LeadsGetManyInput>('get', '/leads'),
   getOne: endpoint<LeadsGetOneOutput, LeadsGetOneInput>('get', ({ id }) => `/leads/${id}`),
   create: endpoint<LeadsCreateOutput, LeadsCreateInput>('post', '/leads'),

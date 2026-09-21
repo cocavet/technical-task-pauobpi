@@ -1,6 +1,7 @@
 export type LeadsCreateInput = {
   firstName: string
   lastName: string
+  companyWebsite?: string | null
   phoneNumber?: string | null
   yearsAtCompany?: number | null
   linkedinUrl?: string | null
@@ -10,6 +11,7 @@ export type LeadsCreateInput = {
 export type LeadsCreateOutput = {
   id: number
   firstName: string
+  companyWebsite?: string | null
   phoneNumber?: string | null
   yearsAtCompany?: number | null
   linkedinUrl?: string | null

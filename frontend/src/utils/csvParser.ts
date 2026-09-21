@@ -3,6 +3,7 @@ import {
   isValidEmail,
   isValidCountryCode,
   isValidPhoneNumber,
+  normalizeCompanyWebsite,
   isValidYearsAtCompanyText,
   isValidLinkedinUrl,
 } from '../../../shared/utils/validators'
@@ -16,6 +17,7 @@ export interface CsvLead {
   jobTitle?: string
   countryCode?: string
   companyName?: string
+  companyWebsite?: string
   phoneNumber?: string
   yearsAtCompany?: number
   linkedinUrl?: string
@@ -77,6 +79,13 @@ export const parseCsv = (content: string): CsvLead[] => {
           break
         case 'countrycode':
           lead.countryCode = trimmedValue || undefined
+          break
+        case 'companywebsite':
+          if (trimmedValue) {
+            const website = normalizeCompanyWebsite(trimmedValue)
+            if (website) lead.companyWebsite = website
+            else errors.push('Company website must be a valid domain or HTTP(S) website URL')
+          }
           break
         case 'phonenumber':
           lead.phoneNumber = trimmedValue || undefined

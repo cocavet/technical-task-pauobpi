@@ -4,6 +4,9 @@ import toast from 'react-hot-toast'
 import { api } from '../api'
 import { MessageTemplateModal } from './MessageTemplateModal'
 import { CsvImportModal } from './CsvImportModal'
+import { PhoneSearchStatus } from './PhoneSearchStatus'
+import { usePhoneEnrichment } from '../hooks/usePhoneEnrichment'
+import { isPhoneSearchActive } from '../../../shared/phoneEnrichment'
 
 export const LeadsList: FC = () => {
   const [selectedLeads, setSelectedLeads] = useState<number[]>([])
@@ -18,6 +21,15 @@ export const LeadsList: FC = () => {
     retry: false,
   })
   
+
+  const phone = usePhoneEnrichment(leads.data?.map(lead => lead.id) || [])
+  const phoneById = new Map(phone.progress.data?.map(lead => [lead.id, lead]))
+  const activePhoneCount = phone.progress.data?.filter(lead => isPhoneSearchActive(lead.phoneEnrichmentStatus)).length || 0
+  const selectedPhoneActive = selectedLeads.some(id => isPhoneSearchActive(phoneById.get(id)?.phoneEnrichmentStatus))
+  const selectedWithoutPhone = selectedLeads.some(id => {
+    const saved = phoneById.get(id) || leads.data?.find(lead => lead.id === id)
+    return saved && !saved.phoneNumber
+  })
 
   const deleteLeadsMutation = useMutation({
     mutationFn: async (ids: number[]) => api.leads.deleteMany({ ids }),
@@ -166,6 +178,16 @@ export const LeadsList: FC = () => {
                     </button>
                     <button
                       onClick={() => {
+                        setIsEnrichDropdownOpen(false)
+                        phone.start.mutate(selectedLeads)
+                      }}
+                      disabled={phone.start.isPending || selectedPhoneActive || !selectedWithoutPhone || phone.progress.isError || phone.progress.isLoading}
+                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Find phone
+                    </button>
+                    <button
+                      onClick={() => {
                         toast.error('Gender guessing feature is not yet implemented')
                         setIsEnrichDropdownOpen(false)
                       }}
@@ -185,7 +207,7 @@ export const LeadsList: FC = () => {
 
             <button
               onClick={handleDeleteSelected}
-              disabled={selectedLeads.length === 0 || deleteLeadsMutation.isPending || verifyEmailsMutation.isPending}
+              disabled={selectedLeads.length === 0 || deleteLeadsMutation.isPending || verifyEmailsMutation.isPending || phone.start.isPending || selectedPhoneActive}
               className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {deleteLeadsMutation.isPending ? (
@@ -227,6 +249,17 @@ export const LeadsList: FC = () => {
         </p>
       )}
 
+      {(phone.start.isPending || activePhoneCount > 0) && (
+        <p role="status" className="px-6 py-3 text-sm text-blue-700">
+          {phone.start.isPending ? 'Starting phone searches…' : `${activePhoneCount} phone searches in progress. You can reload this page.`}
+        </p>
+      )}
+      {phone.progress.isError && (
+        <p role="alert" className="px-6 py-3 text-sm text-red-700">
+          Phone progress is temporarily unavailable. Existing phones are preserved.
+          <button onClick={() => phone.progress.refetch()} className="ml-2 underline">Retry status</button>
+        </p>
+      )}
       <div className="flex-1 overflow-hidden">
         <div className="h-full overflow-auto">
           <table className="min-w-full divide-y divide-gray-200">
@@ -254,6 +287,9 @@ export const LeadsList: FC = () => {
                 </th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
                   Company
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
+                  Company website
                 </th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
                   Country
@@ -314,10 +350,14 @@ export const LeadsList: FC = () => {
                     <div className="text-sm text-gray-900">{lead.companyName || '-'}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">{lead.companyWebsite ?? '-'}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900">{lead.countryCode || '-'}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{lead.phoneNumber ?? '-'}</div>
+                    <div className="text-sm text-gray-900">{phoneById.get(lead.id)?.phoneNumber ?? lead.phoneNumber ?? '-'}</div>
+                    <PhoneSearchStatus progress={phoneById.get(lead.id)} />
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900">{lead.yearsAtCompany ?? '-'}</div>

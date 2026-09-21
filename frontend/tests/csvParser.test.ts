@@ -315,3 +315,19 @@ Zoe,Test,zoe@example.com,0034 612 345 678,0,https://linkedin.com/in/zoe`)
     ])
   })
 })
+
+describe('company website for phone enrichment', () => {
+  it('normalizes an explicitly supplied website and never infers it from the company or email', () => {
+    const rows = parseCsv(`firstName,lastName,email,companyName,companyWebsite
+Ada,Test,ada@example.com,Example,https://www.example.com/about
+Grace,Test,grace@company.com,Company,`)
+    expect(rows[0]).toMatchObject({ companyWebsite: 'www.example.com', isValid: true })
+    expect(rows[1].companyWebsite).toBeUndefined()
+    expect(rows[1].isValid).toBe(true)
+  })
+  it('flags invalid website input', () => {
+    const [row] = parseCsv('firstName,lastName,email,companyWebsite\nAda,Test,ada@example.com,Example Company')
+    expect(row.isValid).toBe(false)
+    expect(row.errors).toContain('Company website must be a valid domain or HTTP(S) website URL')
+  })
+})

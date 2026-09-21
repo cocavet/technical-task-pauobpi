@@ -100,6 +100,7 @@ export const CsvImportModal: FC<CsvImportModalProps> = ({ isOpen, onClose }) => 
         jobTitle: lead.jobTitle || undefined,
         countryCode: lead.countryCode || undefined,
         companyName: lead.companyName || undefined,
+        companyWebsite: lead.companyWebsite,
         phoneNumber: lead.phoneNumber,
         yearsAtCompany: lead.yearsAtCompany,
         linkedinUrl: lead.linkedinUrl,
@@ -245,7 +246,7 @@ export const CsvImportModal: FC<CsvImportModalProps> = ({ isOpen, onClose }) => 
                   </p>
                   <p className="text-sm text-gray-500">
                     CSV must include: firstName, lastName, email (required). Optional: jobTitle, countryCode,
-                    companyName, phoneNumber, yearsAtCompany, linkedinUrl. Years at company is distinct from years in role.
+                    companyName, companyWebsite, phoneNumber, yearsAtCompany, linkedinUrl. Years at company is distinct from years in role.
                   </p>
                 </div>
               )}
@@ -292,6 +293,9 @@ export const CsvImportModal: FC<CsvImportModalProps> = ({ isOpen, onClose }) => 
                         Company
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                        Company website
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                         Phone number
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
@@ -325,6 +329,7 @@ export const CsvImportModal: FC<CsvImportModalProps> = ({ isOpen, onClose }) => 
                         </td>
                         <td className="px-3 py-2 text-sm text-gray-900">{lead.email || '-'}</td>
                         <td className="px-3 py-2 text-sm text-gray-900">{lead.companyName || '-'}</td>
+                        <td className="px-3 py-2 text-sm text-gray-900">{lead.companyWebsite ?? '-'}</td>
                         <td className="px-3 py-2 text-sm text-gray-900">{lead.phoneNumber ?? '-'}</td>
                         <td className="px-3 py-2 text-sm text-gray-900">{lead.yearsAtCompany ?? '-'}</td>
                         <td className="px-3 py-2 text-sm text-gray-900">{lead.linkedinUrl ?? '-'}</td>

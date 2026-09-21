@@ -37,3 +37,20 @@ export function isValidLinkedinUrl(value: unknown): value is string {
     return false
   }
 }
+
+/** Uses only an explicitly supplied website; never derives one from other lead data. */
+export function normalizeCompanyWebsite(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim() || /\s/.test(value.trim())) return null
+  try {
+    const text = value.trim()
+    const url = new URL(text.includes('://') ? text : `https://${text}`)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.port) return null
+    const hostname = url.hostname
+    if (hostname.length > 253 || !hostname.includes('.') || /^\d+(?:\.\d+){3}$/.test(hostname)) return null
+    if (!hostname.split('.').every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label)))
+      return null
+    return hostname
+  } catch {
+    return null
+  }
+}

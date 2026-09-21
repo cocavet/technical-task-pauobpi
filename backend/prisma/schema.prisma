@@ -17,6 +17,14 @@ model lead {
   jobTitle    String?
   countryCode String?
   companyName String?
+  companyWebsite String?
+  phoneEnrichmentStatus String?
+  phoneEnrichmentProvider String?
+  phoneEnrichmentError String?
+  phoneEnrichmentRequestId String?
+  phoneEnrichmentRunId String?
+  phoneEnrichmentStartedAt DateTime?
+  phoneEnrichedAt DateTime?
   phoneNumber String?
   yearsAtCompany Int?
   linkedinUrl String?
