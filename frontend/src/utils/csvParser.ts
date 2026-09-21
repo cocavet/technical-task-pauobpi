@@ -88,6 +88,9 @@ export const parseCsv = (content: string): CsvLead[] => {
     } else if (!isValidEmail(lead.email)) {
       errors.push('Invalid email format')
     }
+    if (lead.countryCode && !/^[A-Z]{2}$/.test(lead.countryCode)) {
+      errors.push('Country code must be two uppercase letters')
+    }
 
     data.push({
       ...lead,

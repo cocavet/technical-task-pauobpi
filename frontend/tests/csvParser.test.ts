@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { parseCsv, isValidEmail } from './csvParser'
+import { parseCsv, isValidEmail } from '../src/utils/csvParser'
+import leadsWithErrors from '../../docs/leads-with-errors.csv?raw'
+import leadsOk1 from '../../docs/leads-ok-1.csv?raw'
+import leadsOk2 from '../../docs/leads-ok-2.csv?raw'
+import leadsOk3 from '../../docs/leads-ok-3.csv?raw'
 
 describe('isValidEmail', () => {
   it('should return true for valid email addresses', () => {
@@ -21,6 +25,56 @@ describe('isValidEmail', () => {
 })
 
 describe('parseCsv', () => {
+  it('rejects the invalid countries from the real CSV without corrupting accents', () => {
+    const leads = parseCsv(leadsWithErrors)
+
+    for (const rowIndex of [6, 11, 14, 16, 18]) {
+      const lead = leads.find((lead) => lead.rowIndex === rowIndex)!
+      expect(lead.isValid, `CSV row ${rowIndex}`).toBe(false)
+      expect(lead.errors).toContain('Country code must be two uppercase letters')
+    }
+    expect(leads[0]).toMatchObject({
+      firstName: 'Iñaki',
+      lastName: 'Álvarez',
+      countryCode: 'ES',
+      isValid: true,
+      errors: [],
+    })
+  })
+
+  it.each([leadsOk1, leadsOk2, leadsOk3])('preserves every valid example country', (csv) => {
+    const leads = parseCsv(csv)
+    const originalCodes = csv
+      .trim()
+      .split(/\r?\n/)
+      .slice(1)
+      .map((row) => row.match(/,([A-Z]{2}),/)![1])
+    expect(leads.every((lead) => lead.isValid)).toBe(true)
+    expect(leads.map((lead) => lead.countryCode)).toEqual(originalCodes)
+  })
+
+  it('keeps countries optional and preserves accented fields when trimming', () => {
+    const leads = parseCsv(`firstName,lastName,email,jobTitle,countryCode,companyName
+ Iñaki , Álvarez ,inaki@example.com, Técnico , ES , Compañía Ñ
+Zoé,Muñoz,zoe@example.com,Diseñadora,,Éxito`)
+    expect(leads[0]).toMatchObject({
+      firstName: 'Iñaki',
+      lastName: 'Álvarez',
+      jobTitle: 'Técnico',
+      countryCode: 'ES',
+      companyName: 'Compañía Ñ',
+      isValid: true,
+    })
+    expect(leads[1]).toMatchObject({
+      firstName: 'Zoé',
+      lastName: 'Muñoz',
+      jobTitle: 'Diseñadora',
+      countryCode: undefined,
+      companyName: 'Éxito',
+      isValid: true,
+    })
+  })
+
   it('should throw error for empty content', () => {
     expect(() => parseCsv('')).toThrow('CSV content cannot be empty')
     expect(() => parseCsv('   ')).toThrow('CSV content cannot be empty')
