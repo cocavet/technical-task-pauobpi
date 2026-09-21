@@ -264,6 +264,7 @@ app.post('/leads/verify-emails', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'leadIds must be a non-empty array' })
   }
 
+  let connection: Connection | undefined
   try {
     const leads = await prisma.lead.findMany({
       where: { id: { in: leadIds.map((id) => Number(id)) } },
@@ -273,43 +274,49 @@ app.post('/leads/verify-emails', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'No leads found with the provided IDs' })
     }
 
-    const connection = await Connection.connect({ address: 'localhost:7233' })
+    connection = await Connection.connect({ address: 'localhost:7233', connectTimeout: '3 seconds' })
     const client = new Client({ connection, namespace: 'default' })
 
     let verifiedCount = 0
     const results: Array<{ leadId: number; emailVerified: boolean }> = []
     const errors: Array<{ leadId: number; leadName: string; error: string }> = []
 
-    for (const lead of leads) {
-      try {
-        const isVerified = await client.workflow.execute(verifyEmailWorkflow, {
-          taskQueue: 'myQueue',
-          workflowId: `verify-email-${lead.id}-${Date.now()}`,
-          args: [lead.email],
-        })
+    await Promise.all(
+      leads.map(async (lead) => {
+        try {
+          const isVerified = await connection!.withDeadline(Date.now() + 20_000, () =>
+            client.workflow.execute(verifyEmailWorkflow, {
+              taskQueue: 'myQueue',
+              workflowId: `verify-email-${lead.id}`,
+              workflowIdConflictPolicy: 'USE_EXISTING',
+              workflowExecutionTimeout: '15 seconds',
+              args: [lead.email],
+            })
+          )
 
-        await prisma.lead.update({
-          where: { id: lead.id },
-          data: { emailVerified: Boolean(isVerified) },
-        })
+          await prisma.lead.update({
+            where: { id: lead.id },
+            data: { emailVerified: isVerified },
+          })
 
-        results.push({ leadId: lead.id, emailVerified: isVerified })
-        verifiedCount += 1
-      } catch (error) {
-        errors.push({
-          leadId: lead.id,
-          leadName: `${lead.firstName} ${lead.lastName}`.trim(),
-          error: error instanceof Error ? error.message : 'Unknown error',
-        })
-      }
-    }
+          results.push({ leadId: lead.id, emailVerified: isVerified })
+          verifiedCount += 1
+        } catch {
+          errors.push({
+            leadId: lead.id,
+            leadName: `${lead.firstName} ${lead.lastName}`.trim(),
+            error: 'Verification failed or timed out. Please retry.',
+          })
+        }
+      })
+    )
 
-    await connection.close()
-
-    res.json({ success: true, verifiedCount, results, errors })
+    res.json({ success: errors.length === 0, verifiedCount, results, errors })
   } catch (error) {
     console.error('Error verifying emails:', error)
     res.status(500).json({ error: 'Failed to verify emails' })
+  } finally {
+    await connection?.close()
   }
 })
 

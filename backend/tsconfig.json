@@ -16,5 +16,5 @@
 
     "skipLibCheck": true
   },
-  "exclude": ["vitest.config.ts"]
+  "exclude": ["vitest.config.ts", "tests"]
 }

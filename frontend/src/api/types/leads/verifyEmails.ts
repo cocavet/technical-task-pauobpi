@@ -7,7 +7,7 @@ export type LeadsVerifyEmailsOutput = {
   verifiedCount: number
   results: Array<{
     leadId: number
-    emailVerified: boolean | null
+    emailVerified: boolean
   }>
   errors: Array<{
     leadId: number
@@ -15,5 +15,4 @@ export type LeadsVerifyEmailsOutput = {
     error: string
   }>
 }
-
 
