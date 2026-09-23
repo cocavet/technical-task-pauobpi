@@ -1,330 +1,331 @@
-# Decisiones
+# Decisions
 
-## Bug: países en la importación CSV — 21/09/2026
+## Bug: countries in CSV imports — 21/09/2026
 
-### Evidencia y causa
+### Evidence and cause
 
-La reproducción identificó `12` y `XXX` en `docs/leads-with-errors.csv`
-(líneas 14, 16 y 18). El parser los marcaba válidos y llegaban sin cambios
-a SQLite, a la API y a la tabla. No se reprodujo corrupción de UTF-8:
-`Iñaki Álvarez` ya se leía correctamente.
+Reproduction identified `12` and `XXX` in `docs/leads-with-errors.csv`
+(lines 14, 16, and 18). The parser marked them as valid, and they reached
+SQLite, the API, and the table unchanged. No UTF-8 corruption was reproduced:
+`Iñaki Álvarez` was already being read correctly.
 
-### Corrección mínima
+### Minimal fix
 
-Validar en `frontend/src/utils/csvParser.ts` que un país informado tenga
-dos letras ASCII mayúsculas (`^[A-Z]{2}$`), después del trim existente.
-La fila incorrecta utiliza el mecanismo de errores que ya muestra el modal
-y queda excluida de la petición de importación. El país sigue siendo opcional.
-No se transforman países ni caracteres acentuados.
+Validate in `frontend/src/utils/csvParser.ts` that a provided country consists
+of two uppercase ASCII letters (`^[A-Z]{2}$`), after the existing trim.
+An invalid row uses the error mechanism already displayed by the modal
+and is excluded from the import request. Country remains optional.
+Countries and accented characters are not transformed.
 
-Se valida el formato, no la pertenencia a un catálogo ISO. Esto conserva
-la convención existente de dos letras, incluido `UK` en los datos iniciales,
-sin añadir dependencias ni decidir nuevas reglas sobre países admitidos.
-El alcance es el flujo CSV de la aplicación: no se añaden restricciones a
-otros consumidores de la API ni se reparan registros históricos.
+Validation checks the format, not membership in an ISO catalog. This preserves
+the existing two-letter convention, including `UK` in the seed data,
+without adding dependencies or defining new rules for accepted countries.
+The scope is the application's CSV flow: no restrictions are added for
+other API consumers, and historical records are not repaired.
 
-### Verificación
+### Verification
 
-- Regresión que carga el CSV original: las cinco filas con país inválido
-  (6, 11, 14, 16 y 18) reciben un error de país. La prueba falló antes del
-  cambio y pasó después.
-- Los tres archivos `leads-ok-*.csv` conservan todos sus códigos y siguen
-  siendo válidos. Se comprueban también país vacío, espacios y campos
-  acentuados (`Iñaki`, `Álvarez`, `Técnico`, `Compañía Ñ`, `Zoé`, `Muñoz`, `Éxito`).
-- `pnpm test --run` en frontend: 24/24 pruebas correctas.
-- Las pruebas del parser se agrupan en `frontend/tests/csvParser.test.ts`,
-  a petición del usuario, separadas de las utilidades de producción.
-- Recorrido real en navegador: selección de un archivo UTF-8 con cinco
-  filas identificadas por `CSVFIX20260921`; el modal mostró tres válidas
-  (`ES`, `US`, vacío) y dos inválidas (`12`, `XXX`). Se pulsó importar y
-  se verificaron las tres filas en SQLite, en `GET /leads` y en la tabla.
-  Países y acentos permanecieron intactos; las dos filas inválidas no
-  llegaron a la base de datos ni a la tabla.
-- Las tres filas temporales se retiraron al acabar. Los 29 registros
-  anteriores, incluidos los de la reproducción previa, se conservaron.
-- `pnpm build` sigue fallando por el error previo TS2741 de `emailVerified`
-  en `src/api/mutations/useApiMutation.ts:64`, ajeno a este cambio.
+- Regression test loading the original CSV: all five rows with invalid countries
+  (6, 11, 14, 16, and 18) receive a country error. The test failed before
+  the change and passed afterward.
+- The three `leads-ok-*.csv` files retain all their codes and remain
+  valid. Checks also cover an empty country, whitespace, and accented fields
+  (`Iñaki`, `Álvarez`, `Técnico`, `Compañía Ñ`, `Zoé`, `Muñoz`, `Éxito`).
+- `pnpm test --run` in the frontend: 24/24 tests passed.
+- Parser tests are grouped in `frontend/tests/csvParser.test.ts`,
+  at the user's request, separate from production utilities.
+- Live browser walkthrough: selected a UTF-8 file with five
+  rows identified by `CSVFIX20260921`; the modal showed three valid rows
+  (`ES`, `US`, empty) and two invalid rows (`12`, `XXX`). Import was clicked,
+  and the three rows were verified in SQLite, `GET /leads`, and the table.
+  Countries and accents remained intact; the two invalid rows did not
+  reach the database or the table.
+- The three temporary rows were removed afterward. The 29 existing records,
+  including those from the previous reproduction, were preserved.
+- `pnpm build` still fails due to the pre-existing TS2741 `emailVerified` error
+  in `src/api/mutations/useApiMutation.ts:64`, unrelated to this change.
 
-Bloque CSV cerrado sin modificar emails ni añadir nuevos campos.
+CSV work completed without changing emails or adding new fields.
 
-## Bug: verificación de emails sin fin ni feedback — 21/09/2026
+## Bug: endless email verification with no feedback — 21/09/2026
 
-### Causa y decisión
+### Cause and decision
 
-La actividad simulada tarda 20 segundos para `jane.smith`, pero el workflow
-permitía solo 1 segundo por intento, con reintentos ilimitados. El endpoint
-esperaba el resultado secuencialmente y la interfaz ignoraba los errores parciales.
-El usuario confirmó que un fallo debe permitir continuar con los demás leads.
+The simulated activity takes 20 seconds for `jane.smith`, but the workflow
+allowed only 1 second per attempt, with unlimited retries. The endpoint
+waited for results sequentially, and the UI ignored partial errors.
+The user confirmed that a failure must allow the remaining leads to continue.
 
-Se conserva el endpoint síncrono y el esquema de datos. Los leads se procesan
-en paralelo, cada uno con su propio resultado o error. No se introduce un sistema
-de jobs, polling ni nuevas dependencias.
+The synchronous endpoint and data schema are preserved. Leads are processed
+in parallel, each with its own result or error. No job system,
+polling, or new dependencies are introduced.
 
-### Límites y duplicados
+### Limits and duplicates
 
-- Actividad: 5 segundos por intento, como máximo 2 intentos, espera inicial
-  de 1 segundo y 12 segundos de tiempo total incluyendo cola y reintentos.
-- Workflow: 15 segundos de ejecución total, incluso si no hay un worker disponible.
-- Endpoint: conexión con Temporal limitada a 3 segundos y deadline de 20 segundos
-  para la llamada de cada lead. La conexión se cierra en `finally`.
-- Petición del navegador: timeout de 25 segundos exclusivo para este endpoint.
-  La actualización posterior de la tabla no mantiene la mutación pendiente.
-- ID estable por lead con `USE_EXISTING`: las solicitudes simultáneas reutilizan
-  el workflow activo. Después de terminar se permite una nueva verificación.
-- La interfaz indica progreso global y por fila, bloquea otra verificación y el
-  borrado mientras está pendiente y permite volver a intentarlo al finalizar.
+- Activity: 5 seconds per attempt, at most 2 attempts, an initial retry delay
+  of 1 second, and a total timeout of 12 seconds including queueing and retries.
+- Workflow: 15 seconds of total execution time, even if no worker is available.
+- Endpoint: Temporal connection limited to 3 seconds and a 20-second deadline
+  for each lead's call. The connection is closed in `finally`.
+- Browser request: a 25-second timeout specific to this endpoint.
+  The subsequent table refresh does not keep the mutation pending.
+- Stable ID per lead with `USE_EXISTING`: simultaneous requests reuse
+  the active workflow. A new verification is allowed after it finishes.
+- The UI shows overall and per-row progress, blocks another verification and
+  deletion while pending, and allows retrying once it finishes.
 
-### Resultado y errores
+### Results and errors
 
-`true` significa email válido; `false`, email inválido. Ambos son comprobaciones
-completadas. Una excepción o timeout va en `errors`, no en `results`, y no escribe
-`false` en la base de datos: conserva el estado anterior del lead. La respuesta
-marca `success: false` cuando hay fallos técnicos, manteniendo los resultados parciales.
-La interfaz muestra los recuentos de válidos, inválidos y fallos técnicos, identifica
-los leads fallidos y evita notificar un éxito global cuando hay errores.
+`true` means a valid email; `false`, an invalid email. Both are completed
+checks. An exception or timeout goes into `errors`, not `results`, and does not
+write `false` to the database: the lead's previous state is preserved. The response
+sets `success: false` when technical failures occur, retaining partial results.
+The UI shows counts of valid emails, invalid emails, and technical failures,
+identifies failed leads, and avoids reporting overall success when errors occur.
 
-El tipo de `emailVerified` en los resultados de esta operación es `boolean`,
-alineado con el backend; así los recuentos usan el valor y su negación directamente.
-El estado persistido del lead sigue admitiendo `null` para emails no verificados.
+The type of `emailVerified` in this operation's results is `boolean`,
+aligned with the backend, so the counts use the value and its negation directly.
+The lead's persisted state still allows `null` for unverified emails.
 
-El error técnico se muestra durante la sesión de la interfaz; no se persiste un
-historial de intentos. El timeout de Temporal termina la espera del workflow, pero
-no interrumpe por fuerza el código de una actividad que no coopere con cancelación.
-Una finalización tardía de esta actividad no actualiza el lead: esa escritura solo
-ocurre en el endpoint cuando obtiene un resultado correcto.
+Technical errors are displayed during the UI session; no attempt history
+is persisted. The Temporal timeout ends the workflow's wait, but
+does not forcibly interrupt activity code that does not cooperate with cancellation.
+A late completion of this activity does not update the lead: that write only
+happens in the endpoint when it receives a successful result.
 
-### Verificación
+### Verification
 
-- Backend: 31 pruebas correctas y compilación correcta. Las nuevas pruebas están
-  en `backend/tests`; cubren límites, propagación de fallo, casos reales de la
-  actividad, resultados parciales, continuidad del lote y fallo de conexión.
-- Frontend: 26 pruebas correctas, incluidas las regresiones de CSV y dos nuevas
-  pruebas de progreso, bloqueo de duplicados, errores parciales y fallo de petición.
-  Las pruebas nuevas están en `frontend/tests`.
-- Recorrido real desde la interfaz con tres leads temporales `EMAILFIX20260921`:
-  válido y no válido se guardaron mientras el lento seguía pendiente. Este terminó
-  en 11,08 segundos; Temporal confirmó `MAXIMUM_ATTEMPTS_REACHED` y workflow `FAILED`.
-  La tabla mostró `Valid`, `Invalid` y `Verification failed` por separado, junto
-  al aviso de dos comprobados y un fallo técnico.
-- Una segunda petición simultánea para el lento reutilizó el mismo workflow:
-  se confirmó una sola ejecución en Temporal, sin reintentos pendientes al terminar.
-- Se retiraron solo las tres filas creadas para la prueba y se compararon los 29
-  registros anteriores para confirmar que permanecen intactos.
-- El frontend sigue sin compilar por el TS2741 preexistente de `emailVerified`
-  en `useApiMutation.ts:64`. No se amplía este bloque para corregirlo.
+- Backend: 31 tests passed and build succeeded. The new tests are
+  in `backend/tests`; they cover limits, failure propagation, actual activity
+  cases, partial results, batch continuation, and connection failure.
+- Frontend: 26 tests passed, including CSV regressions and two new
+  tests covering progress, duplicate blocking, partial errors, and request failure.
+  The new tests are in `frontend/tests`.
+- Live UI walkthrough with three temporary `EMAILFIX20260921` leads:
+  valid and invalid results were saved while the slow lead remained pending. It finished
+  after 11.08 seconds; Temporal confirmed `MAXIMUM_ATTEMPTS_REACHED` and workflow `FAILED`.
+  The table showed `Valid`, `Invalid`, and `Verification failed` separately, alongside
+  a notification reporting two completed checks and one technical failure.
+- A second simultaneous request for the slow lead reused the same workflow:
+  a single execution was confirmed in Temporal, with no retries pending at completion.
+- Only the three rows created for the test were removed, and the 29 existing
+  records were compared to confirm they remained intact.
+- The frontend still fails to build due to the pre-existing TS2741 `emailVerified`
+  error in `useApiMutation.ts:64`. This work is not expanded to fix it.
 
-Bloque de verificación de emails cerrado.
+Email verification work completed.
 
-## Bloque 3: nuevos campos de lead — 21/09/2026
+## Block 3: new lead fields — 21/09/2026
 
-### Alcance y decisiones
+### Scope and decisions
 
-Se añaden `phoneNumber`, `yearsAtCompany` y `linkedinUrl` de extremo a extremo:
-Prisma y migración, API de alta/consulta/actualización/importación, tipos del
-frontend, CSV y su vista previa, tabla y composición/generación de mensajes.
-Se interpreta «AI» como API: este proyecto genera mensajes con plantillas y no
-contiene una integración de IA. No se añade una nueva integración.
+`phoneNumber`, `yearsAtCompany`, and `linkedinUrl` are added end to end:
+Prisma and migration, create/read/update/import API, frontend types,
+CSV and its preview, table, and message composition/generation.
+“AI” is interpreted as API: this project generates messages from templates and
+contains no AI integration. No new integration is added.
 
-- Los tres campos son opcionales. La migración añade tres columnas nullable sin
-  reconstruir la tabla ni modificar valores anteriores; los leads existentes
-  reciben `null` en las nuevas columnas.
-- `phoneNumber` es texto, nunca un número de JavaScript: conserva `+`, ceros
-  iniciales, separadores y extensiones presentes en los CSV originales. Se
-  recortan espacios exteriores. La validación de formato permite entre 3 y 20
-  dígitos en el número principal, separadores habituales y extensión `x`/`ext`
-  de hasta 6 dígitos, con un máximo de 64 caracteres. No verifica existencia.
-- `yearsAtCompany` representa años completos en la empresa actual: entero entre
-  0 y 2147483647 (límite de Prisma Int). `0` es válido y se conserva al importar,
-  mostrar y generar mensajes. La API recibe un número; el parser convierte
-  únicamente celdas CSV no vacías formadas por dígitos.
-- `yearsInRole` significa años en el puesto actual, no en la empresa. Una persona
-  puede llevar 8 años en la empresa y 2 en su puesto. No se renombra, convierte
-  ni usa esa columna como alternativa a `yearsAtCompany`; sigue ignorada en los
-  CSV antiguos. No se inventa antigüedad para los leads existentes.
-- `linkedinUrl` admite una URL HTTP(S) de perfil `/in/...` en `linkedin.com` o sus
-  subdominios, sin credenciales. Se rechazan otros protocolos, otros dominios,
-  dominios que solo imitan LinkedIn y páginas de empresa.
-- El backend valida los campos en alta, actualización e importación. En alta y
-  actualización devuelve 400 antes de escribir; en importación informa los
-  errores por fila y continúa con las demás, como el flujo existente. El modal
-  ahora muestra esos fallos del backend. El CSV también detecta formatos inválidos.
-- En actualización, omitir un campo conserva su valor; `null` o texto vacío lo
-  borra. Se alinean dos desajustes necesarios para el recorrido: `firstName`
-  del frontend se acepta conservando el alias `name`, y el cliente utiliza el
-  `PATCH` existente, permitido también en CORS. Actualizar solo los nuevos campos
-  ya no escribe `"undefined"` sobre nombre/email. El tipo de respuesta refleja
-  el lead devuelto por la API. Al completar los valores iniciales del lead
-  optimista se añade también `emailVerified: null`, resolviendo el error de
-  compilación anterior en ese mismo objeto.
-- Las nuevas variables son `{phoneNumber}`, `{yearsAtCompany}` y `{linkedinUrl}`.
-  Se conserva la regla existente: si una plantilla pide un campo ausente, falla
-  solo ese lead y no sustituye su mensaje anterior. Si no lo pide, genera
-  normalmente. Los números se convierten a texto sin confundir `0` con ausencia.
+- All three fields are optional. The migration adds three nullable columns without
+  rebuilding the table or changing previous values; existing leads
+  receive `null` in the new columns.
+- `phoneNumber` is text, never a JavaScript number: it preserves `+`, leading
+  zeros, separators, and extensions present in the original CSV files. Leading
+  and trailing whitespace is trimmed. Format validation allows 3 to 20
+  digits in the main number, common separators, and an `x`/`ext` extension
+  of up to 6 digits, with a maximum of 64 characters. It does not verify existence.
+- `yearsAtCompany` represents completed years at the current company: an integer between
+  0 and 2147483647 (the Prisma Int limit). `0` is valid and is preserved during import,
+  display, and message generation. The API receives a number; the parser converts
+  only non-empty CSV cells consisting entirely of digits.
+- `yearsInRole` means years in the current role, not at the company. A person
+  may have spent 8 years at the company and 2 in their role. This column is not renamed,
+  converted, or used as a fallback for `yearsAtCompany`; it remains ignored in
+  older CSV files. No tenure is invented for existing leads.
+- `linkedinUrl` accepts an HTTP(S) profile URL with a `/in/...` path on `linkedin.com`
+  or its subdomains, without credentials. Other protocols, other domains,
+  domains that merely imitate LinkedIn, and company pages are rejected.
+- The backend validates the fields during creation, update, and import. Creation and
+  update return 400 before writing; import reports errors per row and continues
+  with the others, following the existing flow. The modal now displays these
+  backend failures. The CSV parser also detects invalid formats.
+- On update, omitting a field preserves its value; `null` or empty text
+  clears it. Two mismatches required for the flow are fixed: the frontend's
+  `firstName` is accepted while retaining the `name` alias, and the client uses
+  the existing `PATCH` method, which is also allowed in CORS. Updating only the new
+  fields no longer writes `"undefined"` over the name/email. The response type reflects
+  the lead returned by the API. Completing the optimistic lead's initial values
+  also adds `emailVerified: null`, resolving the previous build error
+  in that same object.
+- The new variables are `{phoneNumber}`, `{yearsAtCompany}`, and `{linkedinUrl}`.
+  The existing rule is preserved: if a template requires a missing field, only
+  that lead fails, and its previous message is not replaced. If it does not require
+  the field, generation proceeds normally. Numbers are converted to text without
+  treating `0` as a missing value.
 
-### Composición y ejemplo
+### Composition and example
 
-La fila de botones se sustituye por un selector desplegable con buscador sin
-nuevas dependencias, manteniendo colores y estilos. Permite ratón, flechas,
-Enter y Escape, informa cuando no hay resultados y devuelve el foco al editor.
-Guarda la posición/selección antes de pasar al buscador, inserta en el cursor o
-sustituye el texto seleccionado y deja el cursor después de la variable.
+The row of buttons is replaced with a searchable dropdown without
+new dependencies, preserving colors and styles. It supports the mouse, arrow keys,
+Enter, and Escape, indicates when there are no results, and returns focus to the editor.
+It saves the cursor position/selection before moving to the search field, inserts at the
+cursor or replaces the selected text, and leaves the cursor after the variable.
 
-`docs/leads-new-fields.csv` contiene tres ejemplos: datos completos, campos
-vacíos y cero años con teléfono que empieza por `00`.
+`docs/leads-new-fields.csv` contains three examples: complete data, empty
+fields, and zero years with a phone number starting with `00`.
 
-### Verificación
+### Verification
 
-- Backend: 71 pruebas correctas y compilación correcta. Se cubren los tres
-  campos, valores inválidos, ausencia, borrado explícito, actualización parcial,
-  importación y generación con errores parciales y cero años.
-- Frontend: 38 pruebas correctas y compilación de producción correcta. Incluyen
-  CSV antiguos, nuevos campos, separación de `yearsInRole`, búsqueda, inserción
-  en el cursor, sustitución de selección e inserciones consecutivas con teclado.
-- Recorrido real en navegador con el CSV de ejemplo: 3 filas válidas importadas;
-  vista previa, tabla, API y SQLite conservaron los valores, incluidos `0034`,
-  `0` y el nombre `Zoé`. Se comprobó buscar `PHONE` e insertar la variable en
-  medio de un texto, conservando el cursor y devolviendo el foco al editor.
-- Generación real con las tres variables: 2 mensajes generados (5 y 0 años),
-  y error explícito por teléfono ausente para Luis. Al cambiar la plantilla a
-  `Hi {firstName}`, se generaron correctamente los 3 mensajes.
-- API real: actualización parcial, rechazo de teléfono numérico, antigüedad
-  negativa y dominio LinkedIn falso; borrado explícito y consulta posterior.
-- Se retiraron exclusivamente los tres leads de prueba (IDs 36–38). La comparación
-  con la instantánea anterior a la migración confirma que los 29 leads originales
-  conservan todos sus valores previos y tienen los nuevos campos a `null`.
+- Backend: 71 tests passed and build succeeded. Coverage includes all three
+  fields, invalid values, missing values, explicit clearing, partial updates,
+  import, and generation with partial errors and zero years.
+- Frontend: 38 tests passed and production build succeeded. They include
+  older CSV files, new fields, separation from `yearsInRole`, search, insertion
+  at the cursor, selection replacement, and consecutive keyboard insertions.
+- Live browser walkthrough with the example CSV: 3 valid rows imported;
+  preview, table, API, and SQLite preserved the values, including `0034`,
+  `0`, and the name `Zoé`. Searching for `PHONE` and inserting the variable in
+  the middle of text were checked, preserving the cursor and returning focus to the editor.
+- Live generation with all three variables: 2 messages generated (5 and 0 years),
+  and an explicit missing-phone error for Luis. After changing the template to
+  `Hi {firstName}`, all 3 messages were generated successfully.
+- Live API checks: partial update; rejection of a numeric phone number, negative
+  tenure, and fake LinkedIn domain; explicit clearing and subsequent read.
+- Only the three test leads (IDs 36–38) were removed. Comparison
+  with the snapshot taken before the migration confirms that the 29 original leads
+  retain all their previous values and have `null` in the new fields.
 
-Bloque 3 cerrado. Sin nuevas dependencias ni refactorizaciones ajenas al recorrido.
+Block 3 completed. No new dependencies or refactoring unrelated to the flow.
 
-### Ajuste solicitado: validadores compartidos y `finally` — 21/09/2026
+### Requested adjustment: shared validators and `finally` — 21/09/2026
 
-Se crea `shared/utils/validators.ts` en la raíz, con el nombre de carpeta
-corregido por el usuario. Centraliza las comprobaciones de formato de email, teléfono,
-LinkedIn, país y antigüedad. Frontend y backend importan directamente este
-archivo; se eliminan las expresiones y comprobaciones duplicadas. La
-normalización, obligatoriedad y presentación de errores siguen en cada flujo.
-Se mantienen las reglas existentes: el CSV convierte texto de años válido y la
-API exige un número; cero sigue siendo válido. El email y el país conservan su
-alcance de validación anterior, sin imponer nuevas restricciones a la API.
+`shared/utils/validators.ts` is created at the root, with the folder name
+corrected by the user. It centralizes format checks for email, phone,
+LinkedIn, country, and tenure. Frontend and backend import this
+file directly; duplicated expressions and checks are removed.
+Normalization, required-field rules, and error presentation remain in each flow.
+Existing rules are preserved: CSV converts valid year text, and the
+API requires a number; zero remains valid. Email and country retain their
+previous validation scope, without imposing new restrictions on the API.
 
-En la lectura del CSV se mueve `setIsProcessing(false)` a `finally`, para
-restablecer el estado tanto en éxito como en error, sin repetirlo en `try` y
-`catch`. La conexión con Temporal ya tenía su cierre en `finally`; las funciones
-puras de validación no necesitan una operación de limpieza.
+In CSV reading, `setIsProcessing(false)` is moved to `finally` to
+reset the state on both success and error, without repeating it in `try` and
+`catch`. The Temporal connection was already closed in `finally`; pure
+validation functions do not need a cleanup operation.
 
-Para compilar el TypeScript común sin dependencias nuevas, ambos proyectos
-incluyen `shared`. El backend amplía `rootDir` y su arranque utiliza
-`dist/backend/src/index.js`; el modo desarrollo observa también `../shared`.
-Vite permite servir los archivos compartidos desde la raíz del proyecto.
+To compile the shared TypeScript without new dependencies, both projects
+include `shared`. The backend expands `rootDir`, and its startup uses
+`dist/backend/src/index.js`; development mode also watches `../shared`.
+Vite allows shared files to be served from the project root.
 
-Verificación: las 71 pruebas del backend y 38 del frontend siguen pasando;
-ambos proyectos compilan. Se ejecutó también el validador del backend compilado,
-confirmando que resuelve el módulo común y conserva teléfono con ceros iniciales,
-antigüedad cero y URL de LinkedIn. No se modifican los leads en este ajuste.
+Verification: all 71 backend tests and 38 frontend tests still pass;
+both projects build. The compiled backend validator was also executed,
+confirming that it resolves the shared module and preserves a phone number with leading zeros,
+zero tenure, and a LinkedIn URL. No leads are modified in this adjustment.
 
-### Renombrado de la carpeta común a `shared` — 21/09/2026
+### Renaming the common folder to `shared` — 21/09/2026
 
-Tras el renombrado del usuario, se corrigen los imports, las inclusiones de
-TypeScript y la carpeta observada por el modo desarrollo del backend. La
-ubicación definitiva es `shared/utils/validators.ts` y las referencias de este
-documento se actualizan para reflejarla.
+Following the user's rename, imports, TypeScript includes, and the folder
+watched by backend development mode are corrected. The final
+location is `shared/utils/validators.ts`, and references in this
+document are updated to reflect it.
 
-Verificación: 71 pruebas del backend y 38 del frontend correctas, compilaciones
-correctas y carga del módulo compartido desde el backend compilado comprobada.
+Verification: 71 backend tests and 38 frontend tests passed, builds
+succeeded, and loading the shared module from the compiled backend was verified.
 
-## Bloque 4: búsqueda de teléfono con Temporal — 21/09/2026
+## Block 4: phone lookup with Temporal — 21/09/2026
 
-### Ejecución y proveedores
+### Execution and providers
 
-Se reutilizan el worker y la cola existentes. `enrichPhoneWorkflow` consulta
-**Orion → Astra → Nimbus**, con una actividad por proveedor y parada al encontrar
-un teléfono válido. `backend/src/phone/providers.ts` encapsula entradas,
-autenticación y normalización de cada respuesta. Se conserva literalmente
-`https://api.enginy.ai/api/tmp/numbusLookup` del README. Las claves de ejemplo
-son las del README y pueden sobrescribirse con `ORION_API_KEY`, `ASTRA_API_KEY`
-y `NIMBUS_API_KEY`, exclusivamente en backend.
+The existing worker and queue are reused. `enrichPhoneWorkflow` queries
+**Orion → Astra → Nimbus**, with one activity per provider, stopping when it finds
+a valid phone number. `backend/src/phone/providers.ts` encapsulates inputs,
+authentication, and normalization of each response. The exact URL
+`https://api.enginy.ai/api/tmp/numbusLookup` from the README is preserved. The example keys
+are those in the README and can be overridden with `ORION_API_KEY`, `ASTRA_API_KEY`,
+and `NIMBUS_API_KEY`, exclusively in the backend.
 
-- HTTP: 4 segundos con aborto y limpieza del temporizador en `finally`.
-- Proveedor: 5 segundos por intento, como máximo 3 intentos, backoff de 1 y 2
-  segundos y 20 segundos totales incluyendo cola. Se reintentan red, timeout,
-  429 y 5xx. Otros errores HTTP, JSON inválido o teléfono inválido no se reintentan.
-- Workflow: 90 segundos y un único intento; no reinicia toda la cadena.
-- Lectura/persistencia: actividades independientes, hasta 3 intentos y 10 segundos
-  totales. Si falla guardar el teléfono no se consulta a otro proveedor para
-  ocultar ese fallo: falla la ejecución y la consulta de estado lo informa.
+- HTTP: 4 seconds with abort and timer cleanup in `finally`.
+- Provider: 5 seconds per attempt, at most 3 attempts, backoff delays of 1 and 2
+  seconds, and 20 seconds total including queueing. Network errors, timeouts,
+  429, and 5xx are retried. Other HTTP errors, invalid JSON, or invalid phone numbers are not retried.
+- Workflow: 90 seconds and a single attempt; it does not restart the entire chain.
+- Read/persistence: independent activities, up to 3 attempts and 10 seconds
+  total. If saving the phone number fails, another provider is not queried to
+  hide that failure: execution fails, and the status query reports it.
 
-Agotados los intentos de un proveedor se registra su fallo y se continúa.
-`found` significa teléfono encontrado; `not_found`, consultas completas sin
-resultado; `error`, sin teléfono y con algún fallo técnico; `missing_input`,
-sin teléfono ni fallos técnicos pero con proveedores omitidos por datos faltantes.
-`preserved` indica que se conservó un teléfono añadido durante la búsqueda.
+After a provider's attempts are exhausted, its failure is recorded and processing continues.
+`found` means a phone number was found; `not_found`, completed lookups without
+results; `error`, no phone number and at least one technical failure; `missing_input`,
+no phone number or technical failures, but providers were skipped due to missing data.
+`preserved` indicates that a phone number added during the lookup was retained.
 
-Orion acepta ausencia explícita con `phone: null`; Astra, `phoneNmbr` nulo o
-ausente. Se interpreta HTTP 204 como ausencia explícita de contenido. El README
-no define una respuesta JSON vacía de Nimbus: JSON inesperado, incluido
-`number: null`, es error, no ausencia. Su número debe ser entero positivo seguro;
-se guarda como texto sin inventar prefijos a partir de `countryCode`. Esta
-adaptación no puede recuperar ceros que el proveedor ya haya perdido al enviarlo
-como número. No se añaden reglas de rate limiting fuera del alcance acordado.
+Orion accepts explicit absence with `phone: null`; Astra, a null or missing
+`phoneNmbr`. HTTP 204 is interpreted as an explicit absence of content. The README
+does not define an empty JSON response for Nimbus: unexpected JSON, including
+`number: null`, is an error, not absence. Its number must be a positive safe integer;
+it is stored as text without inventing prefixes from `countryCode`. This
+adaptation cannot recover zeros that the provider already lost by sending it
+as a number. No rate-limiting rules beyond the agreed scope are added.
 
-### Datos y protección de escrituras
+### Data and write protection
 
-La migración añade `companyWebsite` opcional y metadatos de estado, proveedor,
-diagnóstico, inicio/finalización e identificadores de solicitud y ejecución.
-`companyWebsite` recorre API, CSV, tipos, vista previa y tabla. El validador común
-acepta dominio o URL HTTP(S) y extrae su dominio; nunca lo deduce de empresa o
-email. Sin web explícita se omite Orion; sin email/jobTitle requerido se omiten
-los proveedores correspondientes y se continúa con los disponibles.
+The migration adds optional `companyWebsite` and metadata for status, provider,
+diagnostics, start/end times, and request and execution identifiers.
+`companyWebsite` flows through the API, CSV, types, preview, and table. The shared validator
+accepts a domain or HTTP(S) URL and extracts its domain; it never infers it from the company
+or email. Without an explicit website, Orion is skipped; without the required email/jobTitle,
+the corresponding providers are skipped, and processing continues with those available.
 
-Los leads con teléfono se omiten. La admisión usa una actualización condicional
-atómica en SQLite antes de iniciar Temporal. Las actividades comprueban la
-solicitud vigente y la escritura final es transaccional y condicionada a que el
-campo siga vacío. Un reintento, una respuesta tardía o una búsqueda anterior no
-sobrescriben ni borran un teléfono. No se incorpora una acción de reemplazo.
+Leads with a phone number are skipped. Admission uses an atomic conditional
+update in SQLite before starting Temporal. Activities check the
+current request, and the final write is transactional and conditional on the
+field still being empty. A retry, late response, or earlier lookup cannot
+overwrite or clear a phone number. No replacement action is added.
 
-### API, duplicados y feedback
+### API, duplicates, and feedback
 
-`POST /leads/enrich-phones` devuelve **202** tras iniciar las ejecuciones, sin
-esperar su resultado. Deduplica los IDs de la petición. Usa ID estable
-`enrich-phone-{leadId}`, conflicto `USE_EXISTING` y reutilización
-`ALLOW_DUPLICATE`: una búsqueda activa se reutiliza y una terminada permite una
-nueva búsqueda manual si sigue sin teléfono. Una solicitud con inicio ambiguo
-queda marcada como error y se invalida para evitar escrituras tardías; si aún
-hay una ejecución anterior terminando, se informa y se puede volver a intentar.
+`POST /leads/enrich-phones` returns **202** after starting executions, without
+waiting for their results. It deduplicates IDs in the request. It uses the stable ID
+`enrich-phone-{leadId}`, conflict policy `USE_EXISTING`, and reuse policy
+`ALLOW_DUPLICATE`: an active lookup is reused, and a completed one allows a
+new manual lookup if the lead still has no phone number. A request whose startup outcome
+is ambiguous is marked as an error and invalidated to prevent late writes; if a
+previous execution is still finishing, this is reported, and the user can retry.
 
-`GET /leads/phone-enrichment` devuelve los estados persistidos y contrasta los
-activos con Temporal. Repara estados pendientes cuando la ejecución ha fallado,
-expirado o no llegó a iniciarse, sin modificar resultados ya guardados ni
-solicitudes posteriores. Una caída de conexión se informa como estado temporalmente
-no disponible; no se convierte en «sin datos». Las conexiones se cierran en `finally`.
+`GET /leads/phone-enrichment` returns persisted statuses and checks active ones
+against Temporal. It repairs pending statuses when execution has failed,
+timed out, or never started, without modifying results already saved or
+subsequent requests. A connection failure is reported as temporarily unavailable
+status; it is not converted into “no data.” Connections are closed in `finally`.
 
-La tabla muestra proveedor en curso, resultado y diagnóstico. React Query
-consulta cada 2 segundos mientras hay búsquedas activas y recupera el estado al
-recargar. Si falla la consulta muestra un aviso y permite reintentar. Se bloquea
-buscar de nuevo o borrar la selección mientras tiene búsquedas activas, y buscar
-cuando todos los seleccionados ya tienen teléfono. Se mantienen estilos y no
-se añaden dependencias.
+The table shows the current provider, result, and diagnostics. React Query
+polls every 2 seconds while lookups are active and restores the state on
+reload. If the status query fails, it shows a warning and allows retrying. Starting
+another lookup or deleting the selection is blocked while it has active lookups;
+lookup is also blocked when all selected leads already have a phone number. Existing
+styles are preserved, and no dependencies are added.
 
-### Verificación
+### Verification
 
-- 109 pruebas de backend y 44 de frontend correctas; ambas compilaciones pasan.
-- Integración con Temporal real, SQLite aislado y proveedores HTTP simulados:
-  éxito en cada proveedor, orden, parada temprana, ausencia, entradas faltantes,
-  errores transitorios/permanentes, respuesta malformada, timeout HTTP, tres
-  intentos con esperas de 1/2 segundos y tres solicitudes duplicadas concurrentes.
-- Se comprobó respuesta 202 antes de terminar, nueva ejecución al repetir una
-  búsqueda vacía, conservación de teléfonos existentes y añadidos durante la
-  búsqueda, y recuperación del timeout de un workflow sin worker.
-- SQLite real: una respuesta de una solicitud antigua no escribe sobre la nueva;
-  repetir la persistencia no sustituye un resultado ya guardado.
-- Navegador contra el entorno aislado: importación de `companyWebsite`, inicio
-  desde «Find phone», recarga durante Orion, progreso recuperado, controles
-  bloqueados, éxito posterior con Astra, ausencia y falta de entradas diferenciadas,
-  repetición manual de una búsqueda vacía y protección del teléfono encontrado.
-- Simulación en `backend/tests/fixtures/phoneFetch.cjs`, cargada solo por el proceso
-  de prueba; recorrido reproducible en `backend/tests/phoneEnrichment.integration.cjs`.
-  Para aislarlo se permiten `DATABASE_URL`, `PORT` y `TASK_QUEUE`; los valores
-  normales del proyecto se mantienen cuando no se proporcionan.
-- No se consultaron proveedores externos durante las pruebas. Los 29 leads
-  originales se comparan con la instantánea previa y conservan sus datos.
+- 109 backend tests and 44 frontend tests passed; both builds passed.
+- Integration with real Temporal, isolated SQLite, and simulated HTTP providers:
+  success with each provider, order, early stopping, absence, missing inputs,
+  transient/permanent errors, malformed response, HTTP timeout, three
+  attempts with 1/2-second delays, and three concurrent duplicate requests.
+- Verified a 202 response before completion, a new execution when repeating a
+  lookup with no result, preservation of existing phone numbers and those added during
+  the lookup, and recovery from a workflow timeout without a worker.
+- Real SQLite: a response from an old request does not write over the new one;
+  repeating persistence does not replace a result already saved.
+- Browser against the isolated environment: `companyWebsite` import, starting
+  from “Find phone,” reload during Orion, restored progress, blocked
+  controls, subsequent success with Astra, distinction between absence and missing inputs,
+  manual repetition of a lookup with no result, and protection of the phone number found.
+- Simulation in `backend/tests/fixtures/phoneFetch.cjs`, loaded only by the test
+  process; reproducible walkthrough in `backend/tests/phoneEnrichment.integration.cjs`.
+  `DATABASE_URL`, `PORT`, and `TASK_QUEUE` are allowed for isolation; the project's
+  normal values are retained when these are not provided.
+- No external providers were queried during testing. The 29 original leads
+  were compared with the previous snapshot and retained their data.
 
-Bloque 4 cerrado dentro del diseño acordado.
+Block 4 completed within the agreed design.
