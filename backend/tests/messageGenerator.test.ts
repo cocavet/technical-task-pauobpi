@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { generateMessageFromTemplate, Lead } from './messageGenerator'
+import { generateMessageFromTemplate, Lead } from '../src/utils/messageGenerator'
 
 describe('generateMessageFromTemplate', () => {
   const fullLead: Lead = {
